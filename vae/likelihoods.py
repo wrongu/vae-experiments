@@ -1,7 +1,8 @@
+from keras.engine.topology import Layer
 import keras.backend as K
 
 
-class GaussianLikelihood(object):
+class GaussianLikelihood(Layer):
     def __init__(self, sigma):
         self.sigma = sigma
 

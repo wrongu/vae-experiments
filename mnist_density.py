@@ -14,7 +14,7 @@ pixel_std = .05
 k_samples = 8
 
 vae = gaussian_mnist(model_type, latent_dim=latent_dim, pixel_std=pixel_std, k=k_samples)
-weights_file = os.path.join("models", "mnist_entropy_%s.h5" % model_type)
+weights_file = os.path.join("models", "mnist_%s.h5" % model_type)
 vae.model.load_weights(weights_file)
 
 

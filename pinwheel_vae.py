@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import hsv_to_rgb
-from vae import IWAE, GaussianPrior, GaussianLatent, GaussianLikelihood
+from vae import IWAE, IsoGaussianPrior, DiagonalGaussianLatent, GaussianLikelihood
 from keras.models import Sequential
 from keras.layers import Dense
 import keras.backend as K
@@ -36,10 +36,10 @@ def new_vae():
     q_model.add(Dense(32, activation='relu', input_dim=input_dim))
 
     # LATENT
-    latent = GaussianLatent(dims=latent_dim)
+    latent = DiagonalGaussianLatent(dims=latent_dim)
 
     # PRIOR
-    prior = GaussianPrior(dims=latent_dim)
+    prior = IsoGaussianPrior(dims=latent_dim)
 
     # GENERATIVE MODEL
     p_model = Sequential()

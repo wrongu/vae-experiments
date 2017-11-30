@@ -96,7 +96,7 @@ for i in range(n_models + 1):
     # Model weights file for iteration i (or fully-trained model for final data point)
     weights_file = os.path.join("models", "mnist_random_q_%04d_%s.h5" % (i, model_type))
     if i == n_models:
-        weights_file = os.path.join("models", "mnist_entropy_%s.h5" % model_type)
+        weights_file = os.path.join("models", "mnist_%s.h5" % model_type)
 
     # Skip if already computed
     if i < n_models and q_entropies[i] != 0 and os.path.exists(weights_file):
