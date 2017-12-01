@@ -41,7 +41,7 @@ vae.model.load_weights(weights_file)
 class_colors = get_class_colors(10)
 
 # Get keras function of recognition model.
-q = K.function([vae.q_model.input], [vae.latent.mean, vae.latent.log_var])
+q = K.function([vae.inpt], [vae.latents[0].mean, vae.latents[0].log_var])
 
 # Apply recognition model to test set.
 pred_mean, pred_log_var = q([x_test])
@@ -114,7 +114,7 @@ main_surface.blit(pygame.transform.scale(ent_surface, (400, 400)), (0, 0, 400, 4
 # CONSTRUCT RENDERER #
 ######################
 
-render = K.function([vae.latent_sample], [vae.reconstruction])
+render = K.function([vae.latents[0].flat_samples], [vae.reconstruction])
 renderer_input = np.zeros((1, 2))
 
 ####################

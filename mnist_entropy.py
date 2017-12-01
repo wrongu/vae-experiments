@@ -22,7 +22,7 @@ img_pixels = img_rows * img_cols
 model_type = argv[1]
 latent_dim = 2
 pixel_std = .05
-k_samples = 32
+k_samples = 16
 
 vae = gaussian_mnist(model_type, latent_dim=latent_dim, pixel_std=pixel_std, k=k_samples)
 vae.model.compile(loss=None, optimizer='rmsprop')
@@ -38,7 +38,7 @@ if os.path.exists(weights_file):
 else:
     vae.model.fit(x_train,
                   shuffle=True,
-                  epochs=15,
+                  epochs=50,
                   batch_size=100,
                   validation_data=(x_test, None))
     # Save trained model to a file
@@ -53,7 +53,7 @@ else:
 class_colors = get_class_colors(10)
 
 # Get keras function of recognition model.
-q = K.function([vae.q_model.input], [vae.latent.mean, vae.latent.log_var])
+q = K.function([vae.inpt], [vae.latents[0].mean, vae.latents[0].log_var])
 
 # Apply recognition model to test set.
 pred_mean, pred_log_var = q([x_test])
@@ -62,7 +62,7 @@ pred_std = np.sqrt(pred_var)
 
 # Evaluate distribution over a set of points in the latent space -- get a categorical distribution
 # over classes at each point
-categorical, latent_extent = class_categorical(pred_mean, pred_std, y_test, 10, res=100)
+categorical, latent_extent = class_categorical(pred_mean, pred_std, y_test, res=100)
 
 # Find what class is most (plurality) represented at each point
 max_class = categorical.argmax(axis=2)
@@ -86,25 +86,4 @@ plt.title('Entropy over classes')
 plt.subplot(133)
 plt.imshow(entropy_image, extent=latent_extent)
 plt.title('Adjusted class in latent space')
-plt.show()
-
-#################
-# VISUALIZATION #
-#################
-
-render_range = 5
-grid = 15
-vae.set_samples(1)
-render = K.function([vae.latent_sample], [vae.reconstruction])
-full_image = np.zeros((img_rows * grid, img_cols * grid))
-xs = np.linspace(-render_range, render_range, grid)
-xx, yy = np.meshgrid(xs, xs)
-inputs = np.vstack([yy.ravel(), xx.ravel()]).T
-outputs = render([inputs])[0]
-for ii in range(grid**2):
-    i, j = divmod(ii, grid)
-    full_image[j * img_cols:(j + 1) * img_cols, i * img_rows:(i + 1) * img_rows] = \
-        np.reshape(outputs[ii], (img_rows, img_cols))
-plt.imshow(full_image, cmap='Greys_r',
-           extent=(-render_range, render_range, -render_range, render_range))
 plt.show()

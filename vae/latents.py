@@ -1,7 +1,6 @@
 from keras.engine.topology import Layer
 from tensorflow.contrib.distributions import OneHotCategorical
 from .priors import IsoGaussianPrior, DiscreteUniformPrior
-import numpy as np
 import keras.backend as K
 
 
@@ -12,6 +11,7 @@ class FoldSamplesIntoBatch(Layer):
         return K.reshape(x, new_shape)
 
     def compute_output_shape(self, input_shape):
+        print("FOLD SHAPE", input_shape)
         if input_shape[0] is None:
             return (None,) + tuple(input_shape[2:])
         else:
@@ -23,18 +23,21 @@ class Latent(Layer):
         super(Latent, self).__init__(**kwargs)
 
         # Convert k_samples to keras variable (unless it already is one)
-        try:
-            self.k_samples = K.variable(int(k_samples), name="k_samples", dtype=np.int32)
-        except TypeError:
-            self.k_samples = k_samples
+        # try:
+        #     self.k_samples = K.variable(int(k_samples), name="k_samples", dtype=np.int32)
+        # except TypeError:
+        self.k_samples = k_samples
 
         # Record instance variables
         self.d = dim
         self.prior = prior(dim)
 
     def sample_kl(self):
-        # Use monte carlo kl estimate
-        return self.log_prob(self.samples) - self.prior.log_prob(self.samples)
+        try:
+            return K.tile(K.expand_dims(self.analytic_kl()), (1, self.k_samples))
+        except ValueError:
+            # Use monte carlo kl estimate
+            return self.log_prob(self.samples) - self.prior.log_prob(self.samples)
 
     def compute_output_shape(self, input_shape):
         return tuple(input_shape[:-1]) + (self.k_samples, self.d)
@@ -46,6 +49,9 @@ class Latent(Layer):
     def log_prob(self, x):
         # Must be implemented by subclass
         raise NotImplementedError()
+
+    def analytic_kl(self):
+        raise ValueError()
 
 
 class DiagonalGaussianLatent(Latent):
@@ -71,11 +77,13 @@ class DiagonalGaussianLatent(Latent):
         # Create (reparameterized) sample from the latent distribution
         sample_shape = (K.shape(self.mean)[0], self.k_samples, self.d)
         eps = K.random_normal(shape=sample_shape, mean=0., stddev=1.0)
-        self.samples = rep_mean + eps * rep_std
 
-        # Samples of shape (batch, samples, ...) are saved in self.samples. For input into the
-        # generative model, 'fold' the samples into the batch dimension
-        return FoldSamplesIntoBatch()(self.samples)
+        # Shape of self.samples is (batch, samples, dim)
+        self.samples = rep_mean + eps * rep_std
+        # Shape of self.flat_samples is (batch * samples, dim)
+        self.flat_samples = FoldSamplesIntoBatch()(self.samples)
+
+        return self.flat_samples
 
     def log_prob(self, x):
         x_samples = K.shape(x)[1]
@@ -84,7 +92,7 @@ class DiagonalGaussianLatent(Latent):
         x_diff = x - K.repeat(self.mean, x_samples)
         return -(K.sum((x_diff / variance) * x_diff, axis=-1) + log_det) / 2
 
-    def sample_kl(self):
+    def analytic_kl(self):
         if isinstance(self.prior, IsoGaussianPrior):
             # In general for two multi-variate normals
             #   kl(p1||p2)=[log(det(C2)/det(C1)) - dim + Tr(C2^-1*C1) + (m2-m1).T*C2^-1*(m2-m1)]/2
@@ -96,7 +104,7 @@ class DiagonalGaussianLatent(Latent):
             mean_sq_norm = K.sum(self.mean**2, axis=-1)
             return (-log_det_p1 - self.d + trace_c1 + mean_sq_norm) / 2
         else:
-            return super(DiagonalGaussianLatent, self).sample_kl()
+            raise ValueError("Prior must be IsoGaussianPrior")
 
 
 class CategoricalLatent(Latent):
@@ -115,10 +123,11 @@ class CategoricalLatent(Latent):
         # samples, dim) with float type.
         ohc_sample = OneHotCategorical(logits=self.logits).sample(self.k_samples)
         self.samples = K.cast(K.permute_dimensions(ohc_sample, (1, 0, 2)), 'float32')
+        self.flat_samples = FoldSamplesIntoBatch()(self.samples)
 
         # Samples of shape (batch, samples, ...) are saved in self.samples. For input into the
         # generative model, 'fold' the samples into the batch dimension
-        return FoldSamplesIntoBatch()(self.samples)
+        return self.flat_samples
 
     def log_prob(self, x):
         x_samples = K.shape(x)[1]
@@ -129,7 +138,7 @@ class CategoricalLatent(Latent):
             # p is unnormalized multinomial probability
             p = K.exp(self.logits)
             # partition is normalization constant (partition function)
-            partition = K.sum(p, axis=-1)
+            partition = K.sum(p, axis=-1, keepdims=True)
             return K.sum(p * self.logits, axis=-1) / partition - K.log(partition) + K.log(self.d)
         else:
-            return super(DiagonalGaussianLatent, self).sample_kl()
+            raise ValueError("Prior must be DiscreteUniformPrior")

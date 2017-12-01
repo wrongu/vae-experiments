@@ -23,7 +23,7 @@ def class_categorical(means, stds, classes, res=100, eps=1e-10):
     pts = np.concatenate([np.expand_dims(xx, 2), np.expand_dims(yy, 2)], 2)
 
     # Create a categorical distribution over classes at each point in the grid/image
-    categorical = np.full(xx.shape + (classes.unique().size,), eps)
+    categorical = np.full(xx.shape + (np.unique(classes).size,), eps)
 
     def multivariate_gaussian(pos, mu, sigma):
         """Return the multivariate Gaussian distribution on array pos.
