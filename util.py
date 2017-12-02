@@ -11,10 +11,13 @@ def get_class_colors(n_classes):
     return hsv_to_rgb(np.vstack([hues, saturations, values]).T)
 
 
-def class_categorical(means, stds, classes, res=100, eps=1e-10):
-    # Compute maximum extent of predictions (3 std dev) in x and y direction
-    max_extent_x, max_extent_y = np.max(np.abs(means) + 3 * stds, axis=0)
-    max_extent_x, max_extent_y = [max(max_extent_x, max_extent_y)] * 2
+def class_categorical(means, stds, classes, extent=None, res=100, eps=1e-10):
+    if extent is None:
+        # Compute maximum extent of predictions (3 std dev) in x and y direction
+        max_extent_x, max_extent_y = np.max(np.abs(means) + 3 * stds, axis=0)
+        max_extent_x, max_extent_y = [max(max_extent_x, max_extent_y)] * 2
+    else:
+        max_extent_x, max_extent_y = extent, extent
 
     # Create meshgrid of points covering the +/- maximum extent
     xs = np.linspace(-max_extent_x, max_extent_x, res)
