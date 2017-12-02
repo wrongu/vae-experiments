@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from util import class_categorical
 from models import gaussian_mnist
 import keras.backend as K
 from sys import argv
@@ -14,58 +15,15 @@ from my_mnist import x_train, x_test, y_test
 img_rows, img_cols = 28, 28
 img_pixels = img_rows * img_cols
 
-#################
-# CLASS-ENTROPY #
-#################
-
-
-def get_class_multinomial(q, extent, resolution):
-    # Apply recognition model to test set.
-    pred_mean, pred_log_var = q([x_test])
-    pred_var = np.exp(pred_log_var)
-
-    # Create meshgrid of points covering the +/- maximum extent
-    xs = np.linspace(-extent, extent, resolution)
-    ys = np.linspace(-extent, extent, resolution)
-    xx, yy = np.meshgrid(xs, ys)
-    pts = np.concatenate([np.expand_dims(xx, 2), np.expand_dims(yy, 2)], 2)
-
-    # Create a multinomial distribution over classes at each point in the grid/image
-    eps = 1e-10
-    multinomial = np.full(xx.shape + (10,), eps)
-
-    def multivariate_gaussian(pos, mu, sigma):
-        """Return the multivariate Gaussian distribution on array pos.
-
-        pos is an array constructed by packing the meshed arrays of variables
-        x_1, x_2, x_3, ..., x_k into its _last_ dimension.
-
-        Source: https://scipython.com/blog/visualizing-the-bivariate-gaussian-distribution/
-        """
-
-        n = mu.shape[0]
-        sigma_det = np.linalg.det(sigma)
-        sigma_inv = np.linalg.inv(sigma)
-        d = np.sqrt((2 * np.pi)**n * sigma_det)
-        # This einsum call calculates (x-mu)T.sigma-1.(x-mu) in a vectorized
-        # way across all the input variables.
-        fac = np.einsum('...k,kl,...l->...', pos - mu, sigma_inv, pos - mu)
-
-        return np.exp(-fac / 2) / d
-
-    # For each test point of class c, evaluate normpdf of the model and add to multinomial[:,:,c]
-    for c, mu, var in zip(y_test, pred_mean, pred_var):
-        multinomial[:, :, c] += multivariate_gaussian(pts, mu, np.diag(var))
-
-    # Normalize across classes at each point
-    return multinomial / multinomial.sum(axis=2)[:, :, np.newaxis]
-
-
 ###############################
 # FITTING AND ENTROPY MEASURE #
 ###############################
 
 model_type = argv[1]
+latent_dim = 2
+pixel_std = .05
+k_samples = 16
+
 n_models = 150
 q_entropies = np.zeros((n_models,))
 p_log_likelihoods = np.zeros((n_models,))
@@ -86,7 +44,8 @@ if os.path.exists(precomputed_file):
         p_log_likelihoods.resize((n_models,))
 
 # Get prior density
-xs = np.linspace(-5, 5, 200)
+prior_extent, prior_res = 3, 100
+xs = np.linspace(-prior_extent, prior_extent, prior_res)
 xx, yy = np.meshgrid(xs, xs)
 rr2 = xx**2 + yy**2
 prior_p = np.exp(-rr2 / 2)
@@ -104,21 +63,23 @@ for i in range(n_models + 1):
 
     # Compute q_entropies[i] and p_log_likelihoods[i] for a saved or new model
     print(i)
-    vae = gaussian_mnist(latent_dim=2, pixel_std=.05, k=8)
+    vae = gaussian_mnist(model_type, latent_dim=latent_dim, pixel_std=pixel_std, k=k_samples)
 
     # Create model functions
-    nll = vae.likelihood.nll(vae.q_model.input, vae.reconstruction)
-    ll_fn = K.function([vae.q_model.input], [nll])
-    q = K.function([vae.q_model.input], [vae.latent.mean, vae.latent.log_var])
+    ll_fn = K.function([vae.inpt], [vae.nll])
+    q = K.function([vae.inpt], [vae.latents[0].mean, vae.latents[0].log_var])
 
     # Load pre-trained weights if they exist, else train the model
     if os.path.exists(weights_file):
         vae.model.load_weights(weights_file)
     else:
         # Freeze Q(z|x) and train only P(x|z)
-        for layer in vae.q_model.layers:
-            layer.trainable = False
-        vae.latent.trainable = False
+        last_latent = 0
+        for i, l in enumerate(vae.model.layers):
+            if l in vae.latents:
+                last_latent = i
+        for l in vae.model.layers[:last_latent + 1]:
+            l.trainable = False
 
         # Train P model only
         vae.model.compile(loss=None, optimizer='rmsprop')
@@ -131,8 +92,12 @@ for i in range(n_models + 1):
     vae.set_samples(1)
 
     # Compute class-entropy of q
-    multinomial = get_class_multinomial(q, 5, 200)
-    entropy = -(multinomial * np.log(multinomial)).sum(axis=2)
+    pred_mean, pred_log_var = q([x_test])
+    pred_var = np.exp(pred_log_var)
+    pred_std = np.sqrt(pred_var)
+    categorical, extent = class_categorical(pred_mean, pred_std, y_test,
+                                            res=prior_res, extent=prior_extent)
+    entropy = -(categorical * np.log(categorical)).sum(axis=2)
     if i < n_models:
         q_entropies[i] = (prior_p * entropy).sum()
     else:

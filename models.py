@@ -119,17 +119,20 @@ def gaussian_omniglot(cls='vae', latent_dim=2, pixel_std=.05, k=1):
         return IWAE(**kwargs)
 
 
-def gaussian_mnist(cls='vae', latent_dim=2, pixel_std=.05, k=1):
+def gaussian_mnist(cls='vae', latent_dim=2, pixel_std=.05, k=1, q_trainable=True):
     # GLOBAL 'SAMPLES' VARIABLE
     k_samples = K.variable(k, dtype='int32', name='k_samples')
 
     # RECOGNITION MODEL
     inpt = Input(shape=(mnist_pixels,))
     q_hidden_1 = Dense(64, activation='relu')(inpt)
+    q_hidden_1.trainable = q_trainable
     q_hidden_2 = Dense(64, activation='relu')(q_hidden_1)
+    q_hidden_2.trainable = q_trainable
 
     # LATENT -- PRIOR
     latent = DiagonalGaussianLatent(dim=latent_dim, k_samples=k_samples, prior=IsoGaussianPrior)
+    latent.trainable = q_trainable
     latent_samples = latent(q_hidden_2)
 
     # GENERATIVE MODEL
