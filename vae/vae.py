@@ -42,9 +42,11 @@ class IWAE(object):
 
     def _get_weights(self):
         log_likelihood = -self.nll
-        log_p = [p.log_prob(q.samples) for (p, q) in zip(self.priors, self.latents)]
-        log_q = [q.log_prob(q.samples) for q in self.latents]
-        weights_unnormalized = K.exp(log_likelihood + K.sum(log_p) - K.sum(log_q))
+        log_p = K.sum([q.prior.log_prob(q.samples) for q in self.latents], axis=0)
+        log_q = K.sum([q.log_prob(q.samples) for q in self.latents], axis=0)
+        log_weights = log_likelihood + log_p - log_q
+        log_weights -= K.logsumexp(log_weights, axis=-1, keepdims=True)
+        weights_unnormalized = K.exp(log_weights)
         return weights_unnormalized / K.sum(weights_unnormalized, axis=-1, keepdims=True)
 
 
