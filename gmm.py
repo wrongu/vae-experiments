@@ -109,7 +109,7 @@ true_log_posterior = true_log_posterior - \
 true_cat_pdf = np.exp(true_log_posterior)
 true_cat_pdf = true_cat_pdf / true_cat_pdf.sum(axis=2)[:, :, np.newaxis]
 kl = (true_cat_pdf * (true_log_posterior - np.log(dist))).sum(axis=2)
-plt.imshow(kl, extent=(-ext, ext, -ext, ext))
+plt.imshow(kl, extent=(-ext, ext, -ext, ext), cmap='gray', vmin=0)
 plt.xticks([-ext, 0, ext])
 plt.yticks([-ext, 0, ext])
 plt.colorbar()
