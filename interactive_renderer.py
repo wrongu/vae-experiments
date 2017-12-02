@@ -4,7 +4,7 @@ import pygame
 import numpy as np
 import pygame.locals as pl
 import keras.backend as K
-from util import get_class_colors
+from util import get_class_colors, class_categorical
 from sys import argv
 
 from my_mnist import x_test, y_test
@@ -37,6 +37,7 @@ vae.model.load_weights(weights_file)
 # GET ENTROPY IMAGE #
 #####################
 
+
 # Get color for each numeric class
 class_colors = get_class_colors(10)
 
@@ -48,54 +49,18 @@ pred_mean, pred_log_var = q([x_test])
 pred_var = np.exp(pred_log_var)
 pred_std = np.sqrt(pred_var)
 
-# Compute maximum extent of predictions (3 std dev) in x and y direction
-extent = 5
-
-# Create meshgrid of points covering the +/- maximum extent
-xs = np.linspace(-extent, extent, 100)
-ys = np.linspace(-extent, extent, 100)
-xx, yy = np.meshgrid(xs, ys)
-pts = np.concatenate([np.expand_dims(xx, 2), np.expand_dims(yy, 2)], 2)
-
-# Create a multinomial distribution over classes at each point in the grid/image
-eps = 1e-10
-multinomial = np.full(xx.shape + (10,), eps)
-
-
-def multivariate_gaussian(pos, mu, sigma):
-    """Return the multivariate Gaussian distribution on array pos.
-
-    pos is an array constructed by packing the meshed arrays of variables
-    x_1, x_2, x_3, ..., x_k into its _last_ dimension.
-
-    Source: https://scipython.com/blog/visualizing-the-bivariate-gaussian-distribution/
-    """
-
-    n = mu.shape[0]
-    sigma_det = np.linalg.det(sigma)
-    sigma_inv = np.linalg.inv(sigma)
-    d = np.sqrt((2 * np.pi)**n * sigma_det)
-    # This einsum call calculates (x-mu)T.sigma-1.(x-mu) in a vectorized
-    # way across all the input variables.
-    fac = np.einsum('...k,kl,...l->...', pos - mu, sigma_inv, pos - mu)
-
-    return np.exp(-fac / 2) / d
-
-# For each test point of class c, evaluate normpdf of the model and add to multinomial[:,:,c]
-for c, mu, var in zip(y_test, pred_mean, pred_var):
-    multinomial[:, :, c] += multivariate_gaussian(pts, mu, np.diag(var))
-
-# Normalize across classes at each point
-multinomial = multinomial / multinomial.sum(axis=2)[:, :, np.newaxis]
+# Evaluate distribution over a set of points in the latent space -- get a categorical distribution
+# over classes at each point
+categorical, latent_extent = class_categorical(pred_mean, pred_std, y_test, res=100)
 
 # Find what class is most (plurality) represented at each point
-max_class = multinomial.argmax(axis=2)
+max_class = categorical.argmax(axis=2)
 
 # Translate from max_class into a color at each point
 class_image = class_colors[max_class]
 
-# Get entropy across each multinomial (scaled to be in [0, 1])
-relative_entropy = -np.sum(multinomial * np.log(multinomial), axis=2) / np.log(10)
+# Get entropy across each categorical (scaled to be in [0, 1])
+relative_entropy = -np.sum(categorical * np.log(categorical), axis=2) / np.log(10)
 gray_image = np.full(class_image.shape, .5)
 entropy_image = gray_image * relative_entropy[:, :, np.newaxis] + \
     class_image * (1 - relative_entropy[:, :, np.newaxis])
@@ -128,8 +93,8 @@ while not game_exit:
         elif evt.type == pl.MOUSEMOTION:
             mouse_position = evt.pos
 
-    latent_x = extent * (mouse_position[0] - screen_width / 4) / (screen_width / 4)
-    latent_y = extent * (mouse_position[1] - screen_height / 2) / (screen_height / 2)
+    latent_x = latent_extent[1] * (mouse_position[0] - screen_width / 4) / (screen_width / 4)
+    latent_y = latent_extent[3] * (mouse_position[1] - screen_height / 2) / (screen_height / 2)
     renderer_input[:] = (latent_x, latent_y)
     rendered_image = render([renderer_input])[0].reshape((28, 28))
     rendered_image = (rendered_image * 255).astype(np.uint8)
